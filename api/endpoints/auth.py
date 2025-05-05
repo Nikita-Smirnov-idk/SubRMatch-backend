@@ -67,7 +67,7 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 
     if not user_exists:
         user = UserCreateByOauthModel(**user_data)
-        new_user = await user_service.create_user(user, session)
+        new_user = await user_service.create_user_by_oauth(user, session)
     
     access_token, refresh_token = await create_both_jwt_tokens(user_data)
 
@@ -92,7 +92,9 @@ async def signup(user_data: UserCreateByEmailModel, background_tasks: Background
     if user_exists:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User with this email already exists")
 
-    new_user = await user_service.create_user(user_data, session)
+    print(user_data)
+    new_user = await user_service.create_user_by_email(user_data, session)
+    print(new_user)
 
     token = create_url_safe_token({
         "email": email,
@@ -124,7 +126,7 @@ async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_s
 
     if user is not None:
         password_valid = verify_password(password, user.password_hash)
-
+    
         if password_valid:
 
             user_data={
