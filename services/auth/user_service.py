@@ -26,7 +26,6 @@ class UserService:
         new_user = User(**user_data_dict)
 
         new_user.password_hash = generate_hash_password(user_data_dict['password'])
-        print(new_user.password_hash)
 
         new_user.role = "user"
 
