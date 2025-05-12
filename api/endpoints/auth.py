@@ -34,7 +34,6 @@ from services.oauth.google_oauth import oauth
 
 auth_router = APIRouter()
 user_service = UserService()
-role_checker = RoleChecker(["admin", "user"])
 
 current_protocol = "http://"
 base_url = current_protocol + f"{settings.DOMAIN}"

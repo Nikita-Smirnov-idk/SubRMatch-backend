@@ -1,0 +1,39 @@
+{
+  "Possible options": [
+    {
+      "subreddit": "r/smallbusiness",
+      "description": "A community for small business owners to discuss various aspects of running a business, including customer feedback management."
+    },
+    {
+      "subreddit": "r/Entrepreneur",
+      "description": "A subreddit for entrepreneurs to share insights, ask questions, and discuss business strategies, including handling customer reviews."
+    },
+    {
+      "subreddit": "r/digital_marketing",
+      "description": "Focuses on digital marketing strategies, including online reputation management and customer feedback tools."
+    },
+    {
+      "subreddit": "r/startups",
+      "description": "A place for startup founders to discuss challenges and solutions, including customer feedback and review management."
+    },
+    {
+      "subreddit": "r/GoogleMyBusiness",
+      "description": "Specifically focused on Google My Business and related tools, including Google Reviews."
+    },
+    {
+      "subreddit": "r/customerexperience",
+      "description": "Dedicated to discussions about improving customer experience, including feedback collection and management."
+    }
+  ],
+  "Best options": [
+    {
+      "subreddit": "r/smallbusiness"
+    },
+    {
+      "subreddit": "r/GoogleMyBusiness"
+    },
+    {
+      "subreddit": "r/Entrepreneur"
+    }
+  ]
+}

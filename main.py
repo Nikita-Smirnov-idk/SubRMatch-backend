@@ -4,6 +4,7 @@ from database.db import init_db
 from contextlib import asynccontextmanager
 from services.errors.main_errors import register_all_errors
 from middleware.main_middleware import setup_middlewares
+from fastapi.templating import Jinja2Templates
 
 
 VERSION = "1.0"
@@ -21,10 +22,11 @@ app = FastAPI(
     description="Find and format Reddit posts",
     version="1.0.0",
 )
+templates = Jinja2Templates(directory="templates")
 
 register_all_errors(app)
 setup_middlewares(app)
 
 # Adding routers
-#app.include_router(reddit_analyzer.router, prefix=f"/api/{VERSION}")
+app.include_router(reddit_analyzer.router, prefix=f"/api/{VERSION}/reddit_analyzer")
 app.include_router(auth.auth_router, prefix=f"/api/{VERSION}/auth")
