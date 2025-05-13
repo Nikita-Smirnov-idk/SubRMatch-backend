@@ -121,6 +121,9 @@ async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_s
 
     user = await user_service.get_user_by_email(email, session)
 
+    if user.google_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
+
     if user is not None:
         password_valid = verify_password(password, user.password_hash)
     

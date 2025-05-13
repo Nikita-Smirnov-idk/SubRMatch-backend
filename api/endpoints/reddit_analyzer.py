@@ -14,9 +14,8 @@ role_checker = RoleChecker(["admin", "user"])
 
 
 @router.post("/suggest_subreddits")
-async def find_subreddit(post_data: RedditPostModel, acces_token: str = Depends(get_reddit_access_token), _ : bool = Depends(role_checker)):
+async def find_subreddit(post_data: RedditPostModel, access_token: str = Depends(get_reddit_access_token), _ : bool = Depends(role_checker)):
     reponse = await get_suggested_subreddits(post_data.title, post_data.body)
-    
     return JSONResponse(
         status_code=200,
     )

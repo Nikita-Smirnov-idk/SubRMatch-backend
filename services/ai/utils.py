@@ -2,17 +2,22 @@ from openai import AsyncOpenAI
 from core.config import settings
 from fastapi import HTTPException
 import json
+from pathlib import Path
+import asyncio
 
+BASE_DIR = Path(__file__).resolve().parent
 
-
-# Потом загрузи сюда данные из файла json с примером
-suggest_subreddit_example = ""
-
+# Load JSON file as string during startup
+with open(Path(BASE_DIR, "suggest_subreddit_example.json")) as file:
+    example_data_str = file.read()
+    suggest_subreddit_example = json.loads(example_data_str)
 
 deepseek_client = AsyncOpenAI(
     api_key=settings.AI_API_KEY,
     base_url=settings.AI_API_URL
 )
+
+print(settings.AI_API_KEY, settings.AI_API_URL)
 
 async def get_suggested_subreddits(title: str, body: str):
     prompt = (
@@ -24,16 +29,16 @@ async def get_suggested_subreddits(title: str, body: str):
         f"Title: {title or "No title provided"}\nBody: {body or 'No body provided'}"
     )
     try:
+        print('here')
         response = await deepseek_client.chat.completions.create(
             model="deepseek-reasoner",
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=100,
-            response_format={"type": "structured_json"},
+            stream=False,
         )
+        print(response.choices[0].message.content)
         # Парсим ответ, предполагая, что AI возвращает список названий сабреддитов
         subreddits = response.choices[0].message.content.strip().split("\n")
         return [s.strip() for s in subreddits if s.strip()]

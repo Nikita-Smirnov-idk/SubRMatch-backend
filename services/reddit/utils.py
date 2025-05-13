@@ -5,13 +5,14 @@ from typing import Dict
 
 async def get_reddit_access_token() -> str:
     async with httpx.AsyncClient() as client:
-        response = client.post(
+        response = await client.post(
             settings.REDDIT_BASE_URL + "access_token",
             auth=(settings.REDDIT_CLIENT_ID, settings.REDDIT_CLIENT_SECRET),
             data={"grant_type": "client_credentials"},
             headers={"User-Agent": settings.REDDIT_USER_AGENT}
         )
         response.raise_for_status()
+        print(response.json()["access_token"])
         return response.json()["access_token"]
     
 
