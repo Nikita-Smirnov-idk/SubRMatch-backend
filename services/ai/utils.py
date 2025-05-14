@@ -1,11 +1,10 @@
 from openai import AsyncOpenAI
 from core.config import settings
-from fastapi import HTTPException
 import json
 from pathlib import Path
-import asyncio
 from typing import AsyncGenerator
 import httpx
+import re
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -38,7 +37,6 @@ async def stream_openrouter_response(prompt: str) -> AsyncGenerator[str, None]:
     Asynchronously stream response from OpenRouter API for a given prompt.
     Yields chunks of the response as they arrive.
     """
-    print(prompt)
     headers = {
         "Authorization": f"Bearer {settings.AI_API_KEY}",
         "Content-Type": "application/json"
@@ -49,7 +47,9 @@ async def stream_openrouter_response(prompt: str) -> AsyncGenerator[str, None]:
         "messages": [{"role": "user", "content": prompt}],
         "stream": True  # Enable streaming
     }
-    
+
+    subreddit_pattern = r'- r\/([\w-]+) -'
+
     async with httpx.AsyncClient() as client:
         try:
             async with client.stream("POST", settings.AI_API_URL, json=data, headers=headers, timeout=30) as response:
@@ -57,15 +57,19 @@ async def stream_openrouter_response(prompt: str) -> AsyncGenerator[str, None]:
                     yield f"Error: Failed to fetch data from API. Status Code: {response.status_code}"
                     return
                 
+                text = ""
                 async for line in response.aiter_lines():
                     if line.startswith("data: "):
                         chunk = line[6:].strip()
                         if chunk == "[DONE]":
+                            subreddit_names = re.findall(subreddit_pattern, text, re.MULTILINE)
+                            yield f"data: {{\"subreddits\": {json.dumps(subreddit_names)}}}"
                             break
                         try:
                             json_chunk = json.loads(chunk)
                             content = json_chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                             if content:
+                                text += content
                                 yield content
                         except json.JSONDecodeError:
                             continue

@@ -10,7 +10,6 @@ class OllamaService:
         self._model = model
 
     async def get_chat_stream(self, query: str):
-        print(query)
         client = Client(host=self._address)
         chat_messages: list[dict[str, str]] = [{'role': 'user', 'content': query}]
 
