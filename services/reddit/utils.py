@@ -12,7 +12,6 @@ async def get_reddit_access_token() -> str:
             headers={"User-Agent": settings.REDDIT_USER_AGENT}
         )
         response.raise_for_status()
-        print(response.json()["access_token"])
         return response.json()["access_token"]
     
 

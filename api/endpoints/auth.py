@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from services.auth.utils.password_utils import verify_password, generate_hash_password
 from fastapi.responses import JSONResponse
 from services.auth.dependencies import RefreshTokenBearer,  AccessTokenBearer, get_current_user, RoleChecker
-from datetime import datetime
+from datetime import datetime, timezone
 from services.auth.utils.token_utils import create_both_jwt_tokens, decode_token
 from services.celery.celery_tasks import send_email
 from database.redis import (
@@ -156,8 +156,7 @@ async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_s
 @auth_router.post("/refresh_token")
 async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details['exp']
-
-    if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
+    if datetime.fromtimestamp(expiry_timestamp, timezone.utc) > datetime.now(timezone.utc):
 
         old_access_token = await get_token_from_blocklist(f"session:{token_details['jti']}:access")
         if old_access_token:

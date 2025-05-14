@@ -1,16 +1,17 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import jwt
 from core.config import settings
 import uuid
 import logging
 from database.redis import add_token_to_blocklist
+from services.errors.permission_errors import InvalidToken
 
 
 async def create_token(user_data: dict, jti: str, refresh: bool = False) -> str:
     payload = {}
     
     payload['user'] = user_data
-    payload['exp'] = datetime.now() + (timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS) if refresh else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    payload['exp'] = datetime.now(timezone.utc) + (timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS) if refresh else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     payload['jti'] = jti
     payload['refresh'] = refresh
     
@@ -18,6 +19,12 @@ async def create_token(user_data: dict, jti: str, refresh: bool = False) -> str:
         payload=payload,
         key=settings.SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
+    )
+
+    token_data = jwt.decode(
+            jwt=token,
+            key=settings.SECRET_KEY,
+            algorithms=[settings.JWT_ALGORITHM],
     )
 
     exp_time = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60 if not refresh else settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60

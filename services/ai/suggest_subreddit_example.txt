@@ -1,0 +1,6 @@
+{1 - r/smallbusiness - A community for small business owners to discuss various aspects of running a business, including customer feedback management.}
+{2 - r/beermoney - A community focused on sharing ways to make extra money online or through small tasks.}
+
+(everything in () is just my comments, do not include them)
+{((number (1 is best option)) - (subreddits after r/) - (description))}
+(every line must be in {})

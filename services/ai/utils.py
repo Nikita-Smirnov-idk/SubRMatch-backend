@@ -4,43 +4,71 @@ from fastapi import HTTPException
 import json
 from pathlib import Path
 import asyncio
+from typing import AsyncGenerator
+import httpx
 
 BASE_DIR = Path(__file__).resolve().parent
 
 # Load JSON file as string during startup
-with open(Path(BASE_DIR, "suggest_subreddit_example.json")) as file:
+with open(Path(BASE_DIR, "suggest_subreddit_example.txt")) as file:
     example_data_str = file.read()
-    suggest_subreddit_example = json.loads(example_data_str)
+    suggest_subreddit_example = example_data_str
 
 deepseek_client = AsyncOpenAI(
     api_key=settings.AI_API_KEY,
     base_url=settings.AI_API_URL
 )
 
-print(settings.AI_API_KEY, settings.AI_API_URL)
-
-async def get_suggested_subreddits(title: str, body: str):
+def create_subreddit_suggestion_prompt(title: str, body: str):
     prompt = (
         f"You are a Reddit expert. Analyze the following Reddit post and suggest 3-5 relevant subreddits where it could be posted.\n"
-        f"Focus on the topic, tone, and content.\n"
-        f"Return reponse in such way:\n"
-        f"{suggest_subreddit_example}\n"
-        f"The post: \n"
-        f"Title: {title or "No title provided"}\nBody: {body or 'No body provided'}"
+        f"Focus on the topic, tone, and content.\n" + 
+        ("-"*40)+
+        f"\n The post: \n"
+        "Title: {" + f"{title or "No title provided"}" + "}" "\nBody: {" + f"{body or 'No body provided'}" + "} \n" +
+        ("-"*40) +
+        "\n Return reponse in such format, do not add anything else:\n{"
+        f"{suggest_subreddit_example}" + "}\n"
     )
-    try:
-        print('here')
-        response = await deepseek_client.chat.completions.create(
-            model="deepseek-reasoner",
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            stream=False,
-        )
-        print(response.choices[0].message.content)
-        # Парсим ответ, предполагая, что AI возвращает список названий сабреддитов
-        subreddits = response.choices[0].message.content.strip().split("\n")
-        return [s.strip() for s in subreddits if s.strip()]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"AI API error")
+    return prompt
+
+
+async def stream_openrouter_response(prompt: str) -> AsyncGenerator[str, None]:
+    """
+    Asynchronously stream response from OpenRouter API for a given prompt.
+    Yields chunks of the response as they arrive.
+    """
+    print(prompt)
+    headers = {
+        "Authorization": f"Bearer {settings.AI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "model": "deepseek/deepseek-chat:free",
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": True  # Enable streaming
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            async with client.stream("POST", settings.AI_API_URL, json=data, headers=headers, timeout=30) as response:
+                if response.status_code != 200:
+                    yield f"Error: Failed to fetch data from API. Status Code: {response.status_code}"
+                    return
+                
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        chunk = line[6:].strip()
+                        if chunk == "[DONE]":
+                            break
+                        try:
+                            json_chunk = json.loads(chunk)
+                            content = json_chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                            if content:
+                                yield content
+                        except json.JSONDecodeError:
+                            continue
+        except httpx.RequestError as e:
+            yield f"Error: Request failed - {str(e)}"
+    

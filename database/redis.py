@@ -1,7 +1,7 @@
 import redis.asyncio as aioredis
 
 from core.config import settings
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import time
 
@@ -19,7 +19,7 @@ async def token_in_blocklist(name: str) -> bool:
     return True if await redis.exists(name) else False
 
 async def add_token_to_blocklist_with_timestamp(name: str, exp_time: int = None) -> None:
-    ttl = exp_time - int(datetime.now().timestamp())
+    ttl = exp_time - int(datetime.now(timezone.utc).timestamp())
     if ttl > 0:
         await redis.setex(name, ttl, value="")
 
