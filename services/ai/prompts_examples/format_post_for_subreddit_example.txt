@@ -1,0 +1,9 @@
+({title - title_content} title just as text, for example:)
+{title - Struggling to Make Money Online - Need Advice}
+
+({body - body_content} body just as text, for example)
+{body - I’ve been trying to make money online for a while now but haven’t had much success. Could anyone please share some advice or tips.}
+
+(everything in () is just my comments, use them, but not print them in the answer)
+(so you should return only formatted post without any comments)
+(you have to follow rules of subreddit as much as possible, trying to preserve the original content of post)

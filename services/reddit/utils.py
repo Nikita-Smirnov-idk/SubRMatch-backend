@@ -1,27 +1,70 @@
 import httpx
 from core.config import settings
-from typing import Dict
+from typing import Dict, List
+import asyncpraw
+import json
 
 
-async def get_reddit_access_token() -> str:
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            settings.REDDIT_BASE_URL + "api/v1/access_token",
-            auth=(settings.REDDIT_CLIENT_ID, settings.REDDIT_CLIENT_SECRET),
-            data={"grant_type": "client_credentials"},
-            headers={"User-Agent": settings.REDDIT_USER_AGENT}
-        )
-        response.raise_for_status()
-        return response.json()["access_token"]
+reddit = asyncpraw.Reddit(
+    client_id=settings.REDDIT_CLIENT_ID,
+    client_secret=settings.REDDIT_CLIENT_SECRET,
+    user_agent=settings.REDDIT_USER_AGENT,
+)
 
-async def get_subreddit_rules(subreddit: str, token: str) -> Dict:
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            settings.REDDIT_BASE_URL + f"r/{subreddit}/about/rules",
-            headers={"Authorization": f"Bearer {token}", "User-Agent": settings.REDDIT_USER_AGENT}
-        )
-        print(settings.REDDIT_BASE_URL + f"r/{subreddit}/about/rules")
-        print(response)
-        if response.status_code != 200:
-            return {"error": f"Failed to get rules for r/{subreddit}"}
-        return response.json()
+async def get_subreddit_rules(subreddit_name: str):
+    """
+    Получает правила для списка сабреддитов.
+    Args:
+        subreddit_list: Список названий сабреддитов.
+    Returns:
+        JSON-объект с правилами для каждого сабреддита.
+    """
+    
+    try:
+        subreddit = await reddit.subreddit(subreddit_name)
+        subreddit_rules = []
+        async for rule in subreddit.rules:
+            subreddit_rules.append(rule)
+
+        rule_list = [
+            {
+                "rule_number": idx + 1,
+                "short_name": rule.short_name,
+                "description": rule.description,
+            }
+            for idx, rule in enumerate(subreddit_rules)
+        ]
+        
+        return json.dumps({
+            "name": subreddit_name,
+            "status": "success",
+            "rules": rule_list
+        })
+        
+    except Exception as e:
+        return json.dumps({
+            "name": subreddit_name,
+            "status": "failed",
+            "rules": rule_list
+        })
+
+# async def get_reddit_access_token() -> str:
+#     async with httpx.AsyncClient() as client:
+#         response = await client.post(
+#             settings.REDDIT_BASE_URL + "api/v1/access_token",
+#             auth=(settings.REDDIT_CLIENT_ID, settings.REDDIT_CLIENT_SECRET),
+#             data={"grant_type": "client_credentials"},
+#             headers={"User-Agent": settings.REDDIT_USER_AGENT}
+#         )
+#         response.raise_for_status()
+#         return response.json()["access_token"]
+
+# async def get_subreddit_rules(subreddit: str, token: str) -> Dict:
+#     async with httpx.AsyncClient() as client:
+#         response = await client.post(
+#             settings.REDDIT_BASE_URL + f"r/{subreddit}/about/rules",
+#             headers={"Authorization": f"Bearer {token}", "User-Agent": settings.REDDIT_USER_AGENT}
+#         )
+#         if response.status_code != 200:
+#             return {"error": f"Failed to get rules for r/{subreddit}"}
+#         return response.json()
