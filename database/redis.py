@@ -47,3 +47,13 @@ async def add_password_reset_email_cooldown(email: str) -> None:
             }
         )
     )
+
+async def save_jwt_tokens_with_state(state: str, value: str) -> None:
+    await redis.setex(
+        f"tokens:{state}",
+        300,
+        value
+    )
+
+async def delete_from_blocklist(name: str) -> None:
+    await redis.delete(name)

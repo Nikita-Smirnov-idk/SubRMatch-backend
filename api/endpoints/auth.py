@@ -23,6 +23,8 @@ from database.redis import (
     get_token_from_blocklist,
     add_email_verification_cooldown,
     add_password_reset_email_cooldown,
+    save_jwt_tokens_with_state,
+    delete_from_blocklist,
 )
 from fastapi import BackgroundTasks
 from services.auth.utils.url_safe_utils import create_url_safe_token, decode_url_safe_token
@@ -31,6 +33,9 @@ import json
 import time
 from services.oauth.google_oauth import oauth
 from api.utils import limiter
+from middleware.main_middleware import origins
+import uuid
+from starlette.responses import RedirectResponse
 
 
 auth_router = APIRouter()
@@ -46,7 +51,12 @@ password_reset_link = base_url + "/api/1.0/auth/password_reset/"
 # GOOGLE AUTH -----------------------
 @auth_router.get("/google/login")
 @limiter.limit("4/second")
-async def login(request: Request):
+async def login(request: Request, redirect_uri: str):
+    if redirect_uri and redirect_uri.startswith(tuple(origins)):
+        request.session["redirect_uri"] = redirect_uri
+    else:
+        return JSONResponse(content={"message": "Invalid redirect URI"}, status_code=status.HTTP_400_BAD_REQUEST)
+
     redirect_uri = base_url + "/api/1.0/auth/google/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -84,14 +94,41 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
     
     access_token, refresh_token = await create_both_jwt_tokens(user_data)
 
-    return JSONResponse(
-        content={
-            'message': 'Login successful',
-            'access_token': access_token,
-            'refresh_token': refresh_token, 
-        }
-    )
+    frontend_redirect = request.session.get("redirect_uri")
+    if not frontend_redirect:
+        raise HTTPException(status_code=400, detail="No redirect_uri in session")
+
+    # Сохранение токенов в Redis
+    state = str(uuid.uuid4())
+    token_data = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+    }
+
+    await save_jwt_tokens_with_state(state, json.dumps(token_data))
     
+    return RedirectResponse(f"{frontend_redirect}?state={state}")
+
+
+# Эндпоинт для получения токенов
+@auth_router.get("/oauth/tokens")
+@limiter.limit("4/second")
+async def get_tokens(request: Request, state: str):
+    tokens_key = f"tokens:{state}"
+    token_data = get_token_from_blocklist(tokens_key)
+    
+    if not token_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
+    
+    tokens = json.loads(token_data)
+
+    await delete_from_blocklist(tokens_key)  # Удаляем после получения
+    
+    return JSONResponse({
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+        "token_type": "bearer"
+    })
 
 #--------------------------------------------------------------
 

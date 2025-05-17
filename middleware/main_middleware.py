@@ -5,6 +5,10 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from core.config import settings
 
+origins = [
+    "http://localhost:5173",
+]
+
 def setup_middlewares(app: FastAPI) :
     app.add_middleware(
         SessionMiddleware,
@@ -17,9 +21,6 @@ def setup_middlewares(app: FastAPI) :
     register_logging_middleware(app)
 
     # <----
-    origins = [
-        "http://localhost:5173",
-    ]
 
     # Basic Middlewares
     app.add_middleware(
