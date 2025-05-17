@@ -17,11 +17,14 @@ def setup_middlewares(app: FastAPI) :
     register_logging_middleware(app)
 
     # <----
+    origins = [
+        "http://localhost:5173",
+    ]
 
     # Basic Middlewares
     app.add_middleware(
         CORSMiddleware,
-        allow_origins = ["*"],
+        allow_origins = origins,
         allow_credentials=True,
         allow_methods = ["*"],
         allow_headers = ["*"],

@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi import Depends
 from services.auth.user_service import UserService
 from services.auth.dependencies import RoleChecker
@@ -13,6 +13,7 @@ from services.ai.prompts import (
     create_subreddit_suggestion_prompt,
     create_format_post_for_subreddit_prompt,
 )
+from api.utils import limiter
 
 
 #ai_service = OllamaService()
@@ -23,7 +24,8 @@ role_checker = RoleChecker(["admin", "user"])
 
 
 @router.post("/suggest_subreddits")
-async def find_subreddit(post_data: RedditPostModel, _ : bool = Depends(role_checker)):
+@limiter.limit("1/second")
+async def find_subreddit(request: Request, post_data: RedditPostModel, _ : bool = Depends(role_checker)):
     prompt = create_subreddit_suggestion_prompt(post_data.post)
 
     return StreamingResponse(
@@ -32,7 +34,8 @@ async def find_subreddit(post_data: RedditPostModel, _ : bool = Depends(role_che
     )
 
 @router.post("/format_post")
-async def format_post(data: RedditPostFormatForSubredditModel, _ : bool = Depends(role_checker)):
+@limiter.limit("1/second")
+async def format_post(request: Request, data: RedditPostFormatForSubredditModel, _ : bool = Depends(role_checker)):
     prompt = create_format_post_for_subreddit_prompt(data.post, data.subreddit_name, data.subreddit_rules)
 
     return StreamingResponse(

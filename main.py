@@ -5,7 +5,9 @@ from contextlib import asynccontextmanager
 from services.errors.main_errors import register_all_errors
 from middleware.main_middleware import setup_middlewares
 from fastapi.templating import Jinja2Templates
-
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from api.utils import limiter
 
 VERSION = "1.0"
 
@@ -26,6 +28,9 @@ templates = Jinja2Templates(directory="templates")
 
 register_all_errors(app)
 setup_middlewares(app)
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Adding routers
 app.include_router(reddit_analyzer.router, prefix=f"/api/{VERSION}/reddit_analyzer")

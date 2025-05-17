@@ -30,6 +30,7 @@ from services.errors.permission_errors import UserNotFound
 import json
 import time
 from services.oauth.google_oauth import oauth
+from api.utils import limiter
 
 
 auth_router = APIRouter()
@@ -44,12 +45,14 @@ password_reset_link = base_url + "/api/1.0/auth/password_reset/"
 
 # GOOGLE AUTH -----------------------
 @auth_router.get("/google/login")
+@limiter.limit("4/second")
 async def login(request: Request):
     redirect_uri = base_url + "/api/1.0/auth/google/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 
 @auth_router.get("/google/callback")
+@limiter.limit("4/second")
 async def auth_google(request: Request, session: AsyncSession = Depends(get_session)):
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get('userinfo')
@@ -62,9 +65,20 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
         "name": user_info['name'],
         "is_verified": True,
     }
-    user_exists = await user_service.user_exists(user_info['email'], session)
+    user = await user_service.get_user_by_email(user_info['email'], session)
 
-    if not user_exists:
+    if user and user.password_hash is not None:
+        if not user.is_verified:
+            raise HTTPException(status_code=400, detail="Verify your account to login via Google, this account is already registered not via Google")
+
+        if user.is_verified and user.google_id is None:
+            data = {
+                'google_id': user_info['sub']
+            }
+            await user_service.update_user(user, data, session)
+        
+
+    if user is None:
         user = UserCreateByOauthModel(**user_data)
         new_user = await user_service.create_user_by_oauth(user, session)
     
@@ -83,7 +97,8 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 
 
 @auth_router.post("/signup", response_model=UserModel, status_code=status.HTTP_201_CREATED)
-async def signup(user_data: UserCreateByEmailModel, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)):
+@limiter.limit("4/second")
+async def signup(request: Request, user_data: UserCreateByEmailModel, background_tasks: BackgroundTasks, session: AsyncSession = Depends(get_session)):
     email = user_data.email
 
     user_exists = await user_service.user_exists(email, session)
@@ -115,13 +130,14 @@ async def signup(user_data: UserCreateByEmailModel, background_tasks: Background
 
 
 @auth_router.post("/login", response_model=UserLoginModel)
-async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
+@limiter.limit("4/second")
+async def login(request: Request, user_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
     email = user_data.email
     password = user_data.password
-
+    
     user = await user_service.get_user_by_email(email, session)
 
-    if user.google_id:
+    if user.google_id and (user.password_hash is None):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
 
     if user is not None:
@@ -136,7 +152,6 @@ async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_s
             }
 
             access_token, refresh_token = await create_both_jwt_tokens(user_data)
-
             return JSONResponse(
                 content={
                     'message': 'Login successful',
@@ -154,7 +169,8 @@ async def login(user_data: UserLoginModel, session: AsyncSession = Depends(get_s
 
 
 @auth_router.post("/refresh_token")
-async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer())):
+@limiter.limit("4/second")
+async def get_new_access_token(request: Request, token_details:dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details['exp']
     if datetime.fromtimestamp(expiry_timestamp, timezone.utc) > datetime.now(timezone.utc):
 
@@ -185,9 +201,9 @@ async def get_new_access_token(token_details:dict = Depends(RefreshTokenBearer()
 
 
 @auth_router.post("/logout")
-async def logout(token_details:dict = Depends(AccessTokenBearer())):
-
-    old_access_token = get_token_from_blocklist(f"session:{token_details['jti']}:access")
+@limiter.limit("4/second")
+async def logout(request: Request, token_details:dict = Depends(AccessTokenBearer())):
+    old_access_token = await get_token_from_blocklist(f"session:{token_details['jti']}:access")
     if old_access_token:
         await add_token_to_blocklist_with_timestamp(old_access_token, token_details['exp'])
 
@@ -199,12 +215,14 @@ async def logout(token_details:dict = Depends(AccessTokenBearer())):
     )
 
 @auth_router.post("/me")
-async def get_current_user(user = Depends(get_current_user), _: bool = Depends(RoleChecker(["admin"]))):
+@limiter.limit("2/second")
+async def get_current_user(request: Request, user = Depends(get_current_user), _: bool = Depends(RoleChecker(["admin"]))):
     return user
 
 
 @auth_router.post("/resend_verification")
-async def send_mail(background_tasks: BackgroundTasks, token_details:dict = Depends(AccessTokenBearer()), session: AsyncSession = Depends(get_session)):
+@limiter.limit("2/second")
+async def send_mail(request: Request, background_tasks: BackgroundTasks, token_details:dict = Depends(AccessTokenBearer()), session: AsyncSession = Depends(get_session)):
     email = token_details['user']['email']
 
     blocklist_data = await get_token_from_blocklist(f"email_verification:{email}")
@@ -251,7 +269,8 @@ async def send_mail(background_tasks: BackgroundTasks, token_details:dict = Depe
     )
 
 @auth_router.get("/verify/{token}")
-async def verify_user_account(token: str, session: AsyncSession = Depends(get_session)):
+@limiter.limit("2/second")
+async def verify_user_account(request: Request, token: str, session: AsyncSession = Depends(get_session)):
     token_data = decode_url_safe_token(token)
 
     user_email = token_data.get('email')
@@ -280,7 +299,9 @@ async def verify_user_account(token: str, session: AsyncSession = Depends(get_se
 
 
 @auth_router.post('/password_reset')
+@limiter.limit("2/second")
 async def password_reset(
+    request: Request,
     email_data: PasswordResetModel, 
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session)
@@ -330,7 +351,9 @@ async def password_reset(
 
 
 @auth_router.post("/password_reset_confirm/{token}")
+@limiter.limit("2/second")
 async def verify_user_account(
+    request: Request,
     token: str,
     passwords: PassswordResetConfirmModel,
     session: AsyncSession = Depends(get_session)
