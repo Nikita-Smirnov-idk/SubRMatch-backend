@@ -115,7 +115,7 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 @limiter.limit("4/second")
 async def get_tokens(request: Request, state: str):
     tokens_key = f"tokens:{state}"
-    token_data = get_token_from_blocklist(tokens_key)
+    token_data = await get_token_from_blocklist(tokens_key)
     
     if not token_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
@@ -123,7 +123,6 @@ async def get_tokens(request: Request, state: str):
     tokens = json.loads(token_data)
 
     await delete_from_blocklist(tokens_key)  # Удаляем после получения
-    
     return JSONResponse({
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],

@@ -11,6 +11,7 @@ reddit = asyncpraw.Reddit(
     user_agent=settings.REDDIT_USER_AGENT,
 )
 
+
 async def get_subreddit_rules(subreddit_name: str):
     """
     Получает правила для списка сабреддитов.
@@ -23,6 +24,7 @@ async def get_subreddit_rules(subreddit_name: str):
     try:
         subreddit = await reddit.subreddit(subreddit_name)
         subreddit_rules = []
+
         async for rule in subreddit.rules:
             subreddit_rules.append(rule)
 
@@ -45,7 +47,6 @@ async def get_subreddit_rules(subreddit_name: str):
         return json.dumps({
             "name": subreddit_name,
             "status": "failed",
-            "rules": rule_list
         })
 
 # async def get_reddit_access_token() -> str:
