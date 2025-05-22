@@ -1,6 +1,8 @@
 from itsdangerous import URLSafeTimedSerializer
 from core.config import settings
 import logging
+from fastapi import HTTPException
+from starlette import status
 
 
 serializer = URLSafeTimedSerializer(
@@ -23,3 +25,8 @@ def decode_url_safe_token(token:str, max_age:int = 86400):
     
     except Exception as ex:
         logging.error(str(ex))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired token",
+        )
+        

@@ -9,21 +9,13 @@ redis = aioredis.StrictRedis(
     host=settings.REDIS_HOST,
     port=settings.REDIS_PORT,
     db=0,
+    decode_responses=True,
 )
 
-async def add_token_to_blocklist(name: str, exp_time: int, value: str = "") -> None:
+async def add_token_to_storage(name: str, exp_time: int, value: str = "") -> None:
     await redis.setex(name, exp_time, value)
 
-
-async def token_in_blocklist(name: str) -> bool:
-    return True if await redis.exists(name) else False
-
-async def add_token_to_blocklist_with_timestamp(name: str, exp_time: int = None) -> None:
-    ttl = exp_time - int(datetime.now(timezone.utc).timestamp())
-    if ttl > 0:
-        await redis.setex(name, ttl, value="")
-
-async def get_token_from_blocklist(name: str) -> str:
+async def get_token_from_storage(name: str) -> str:
     return await redis.get(name)
 
 async def add_email_verification_cooldown(email: str) -> None:
@@ -55,5 +47,19 @@ async def save_jwt_tokens_with_state(state: str, value: str) -> None:
         value
     )
 
-async def delete_from_blocklist(name: str) -> None:
+async def delete_from_storage(name: str) -> None:
     await redis.delete(name)
+
+
+async def revoke_user_tokens(user_id: str):
+    # Находим все ключи токенов пользователя
+    access_keys = await redis.keys(f"{user_id}:access:*")
+    refresh_keys = await redis.keys(f"{user_id}:refresh:*")
+    mapping_keys = await redis.keys(f"{user_id}:refresh_to_access:*")
+    
+    # Удаляем все токены
+    for key in access_keys + refresh_keys + mapping_keys:
+        await redis.delete(key)
+
+async def token_in_storage(name: str) -> bool:
+    return True if await redis.exists(name) else False

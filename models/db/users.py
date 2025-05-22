@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 import sqlalchemy.dialects.postgresql as pg
 from sqlmodel import Column, Field, Relationship, SQLModel, String
+import json
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
@@ -49,3 +50,12 @@ class User(SQLModel, table=True):
 
     def __repr__(self) -> str:
         return f"User(id={self.id}, name={self.name}, email={self.email}, is_verified={self.is_verified}, created_at={self.created_at})"
+    
+    def get_safe_as_dict(self) -> dict:
+        return dict({
+            "name": self.name,
+            "email": self.email,
+            "role": self.role,
+            "is_verified": self.is_verified,
+            "created_at": self.created_at.isoformat(),
+        })

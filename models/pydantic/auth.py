@@ -1,12 +1,20 @@
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, field_validator
 import uuid
 from datetime import datetime
+from typing import List
+from middleware.main_middleware import origins
+from models.pydantic.validators.auth_validators import validate_uri
 
 
 class UserCreateByEmailModel(BaseModel):
     name: str = Field(max_length=50)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    redirect_uri: str
+
+    @field_validator("redirect_uri")
+    def validate_uri(cls, redirect_uri: str) -> str:
+        return validate_uri(redirect_uri)
 
 
 class UserCreateByOauthModel(BaseModel):
@@ -32,6 +40,11 @@ class UserModel(BaseModel):
 
 class PasswordResetModel(BaseModel):
     email: EmailStr
+    redirect_uri: str
+
+    @field_validator("redirect_uri")
+    def validate_uri(cls, redirect_uri: str) -> str:
+        return validate_uri(redirect_uri)
 
 class PassswordResetConfirmModel(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)

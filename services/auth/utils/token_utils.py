@@ -3,12 +3,18 @@ import jwt
 from core.config import settings
 import uuid
 import logging
-from database.redis import add_token_to_blocklist
+from database.redis import add_token_to_storage, get_token_from_storage
 from services.errors.permission_errors import InvalidToken
+from sqlmodel.ext.asyncio.session import AsyncSession
+from database.db import get_session
+from fastapi import Depends
+from services.auth.user_service import user_service
 
 
-async def create_token(user_data: dict, jti: str, refresh: bool = False) -> str:
+async def create_token(uid: uuid.UUID, user_data: dict, refresh: bool = False) -> tuple[str, str]:
     payload = {}
+
+    jti = str(uuid.uuid4())
     
     payload['user'] = user_data
     payload['exp'] = datetime.now(timezone.utc) + (timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS) if refresh else timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
@@ -28,25 +34,30 @@ async def create_token(user_data: dict, jti: str, refresh: bool = False) -> str:
     )
 
     exp_time = settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60 if not refresh else settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-    name = f"session:{jti}:refresh" if refresh else f"session:{jti}:access"
+    name = f"{uid}:refresh:{jti}" if refresh else f"{uid}:access:{jti}"
 
-    await add_token_to_blocklist(name, exp_time, token)
+    await add_token_to_storage(name, exp_time, token)
 
-    return token
+    return token, jti
 
-async def create_both_jwt_tokens(user_data: dict) -> tuple[str, str]:
-    jti = str(uuid.uuid4())
+async def create_both_jwt_tokens(user_data: dict, session: AsyncSession) -> tuple[str, str]:
+    user = await user_service.get_user_by_email(user_data['email'], session)
 
-    access_token = await create_token(
+    access_token, access_jti = await create_token(
+        uid=user.uid,
         user_data=user_data,
-        jti=jti,
     )
 
-    refresh_token = await create_token(
+    refresh_token, refresh_jti = await create_token(
+        uid=user.uid,
         user_data=user_data,
         refresh=True,
-        jti=jti,
     )
+
+    await add_token_to_storage(f"{user.uid}:refresh_to_access:{refresh_jti}", 
+                           settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60, 
+                           str(access_jti))
+
     return access_token, refresh_token
 
 def decode_token(token: str) -> dict | None:
@@ -56,7 +67,6 @@ def decode_token(token: str) -> dict | None:
             key=settings.SECRET_KEY,
             algorithms=[settings.JWT_ALGORITHM],
         )
-        token_data['token'] = token
 
         return token_data
 

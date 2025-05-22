@@ -7,7 +7,8 @@ from models.pydantic.auth import (
     PasswordResetModel,
     PassswordResetConfirmModel,
 )
-from services.auth.user_service import UserService
+from models.pydantic.validators.auth_validators import validate_uri
+from services.auth.user_service import user_service
 from database.db import get_session
 from fastapi import APIRouter, Depends, status, Request
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -16,15 +17,15 @@ from services.auth.utils.password_utils import verify_password, generate_hash_pa
 from fastapi.responses import JSONResponse
 from services.auth.dependencies import RefreshTokenBearer,  AccessTokenBearer, get_current_user, RoleChecker
 from datetime import datetime, timezone
-from services.auth.utils.token_utils import create_both_jwt_tokens, decode_token
+from services.auth.utils.token_utils import create_both_jwt_tokens
 from services.celery.celery_tasks import send_email
 from database.redis import (
-    add_token_to_blocklist_with_timestamp,
-    get_token_from_blocklist,
+    get_token_from_storage,
     add_email_verification_cooldown,
     add_password_reset_email_cooldown,
     save_jwt_tokens_with_state,
-    delete_from_blocklist,
+    delete_from_storage,
+    revoke_user_tokens,
 )
 from fastapi import BackgroundTasks
 from services.auth.utils.url_safe_utils import create_url_safe_token, decode_url_safe_token
@@ -39,7 +40,6 @@ from starlette.responses import RedirectResponse
 
 
 auth_router = APIRouter()
-user_service = UserService()
 
 current_protocol = "http://"
 base_url = current_protocol + f"{settings.DOMAIN}"
@@ -51,14 +51,11 @@ password_reset_link = base_url + "/api/1.0/auth/password_reset/"
 # GOOGLE AUTH -----------------------
 @auth_router.get("/google/login")
 @limiter.limit("4/second")
-async def login(request: Request, redirect_uri: str):
-    if redirect_uri and redirect_uri.startswith(tuple(origins)):
-        request.session["redirect_uri"] = redirect_uri
-    else:
-        return JSONResponse(content={"message": "Invalid redirect URI"}, status_code=status.HTTP_400_BAD_REQUEST)
+async def login(request: Request, redirect_uri: str = None):
+    request.session["redirect_uri"] = validate_uri(redirect_uri)
 
-    redirect_uri = base_url + "/api/1.0/auth/google/callback"
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    google_redirect_uri = base_url + "/api/1.0/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, google_redirect_uri)
 
 
 @auth_router.get("/google/callback")
@@ -67,7 +64,7 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
     token = await oauth.google.authorize_access_token(request)
     user_info = token.get('userinfo')
     if not user_info:
-        raise HTTPException(status_code=400, detail="Google authentication failed")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Google authentication failed")
     
     user_data = {
         "email": user_info['email'],
@@ -79,7 +76,7 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 
     if user and user.password_hash is not None:
         if not user.is_verified:
-            raise HTTPException(status_code=400, detail="Verify your account to login via Google, this account is already registered not via Google")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verify your account to login via Google, this account is already registered not via Google")
 
         if user.is_verified and user.google_id is None:
             data = {
@@ -90,13 +87,15 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 
     if user is None:
         user = UserCreateByOauthModel(**user_data)
-        new_user = await user_service.create_user_by_oauth(user, session)
+        user = await user_service.create_user_by_oauth(user, session)
+
+    user_data = user.get_safe_as_dict()
     
-    access_token, refresh_token = await create_both_jwt_tokens(user_data)
+    access_token, refresh_token = await create_both_jwt_tokens(user_data, session)
 
     frontend_redirect = request.session.get("redirect_uri")
     if not frontend_redirect:
-        raise HTTPException(status_code=400, detail="No redirect_uri in session")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No redirect_uri in session")
 
     # Сохранение токенов в Redis
     state = str(uuid.uuid4())
@@ -115,14 +114,14 @@ async def auth_google(request: Request, session: AsyncSession = Depends(get_sess
 @limiter.limit("4/second")
 async def get_tokens(request: Request, state: str):
     tokens_key = f"tokens:{state}"
-    token_data = await get_token_from_blocklist(tokens_key)
+    token_data = await get_token_from_storage(tokens_key)
     
     if not token_data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
     
     tokens = json.loads(token_data)
 
-    await delete_from_blocklist(tokens_key)  # Удаляем после получения
+    await delete_from_storage(tokens_key)  # Удаляем после получения
     return JSONResponse({
         "access_token": tokens["access_token"],
         "refresh_token": tokens["refresh_token"],
@@ -149,7 +148,7 @@ async def signup(request: Request, user_data: UserCreateByEmailModel, background
     })
 
     body = {
-        "link": verification_link + f"{token}",
+        "link": user_data.redirect_uri + f"{token}",
     }
 
     send_email.delay([email], "Email Verification", body, 'email_verification.html')
@@ -181,23 +180,14 @@ async def login(request: Request, user_data: UserLoginModel, session: AsyncSessi
     
         if password_valid:
 
-            user_data={
-                'email': user.email,
-                'user_uid': str(user.uid),
-                "role": user.role,
-            }
+            user_data=user.get_safe_as_dict()
 
-            access_token, refresh_token = await create_both_jwt_tokens(user_data)
+            access_token, refresh_token = await create_both_jwt_tokens(user_data, session)
             return JSONResponse(
                 content={
                     'message': 'Login successful',
                     'access_token': access_token,
                     'refresh_token': refresh_token,
-                    'user': {
-                        'email': user.email,
-                        'user_uid': str(user.uid),
-                        "role": user.role,
-                    }
                 }
             )
     
@@ -206,42 +196,42 @@ async def login(request: Request, user_data: UserLoginModel, session: AsyncSessi
 
 @auth_router.post("/refresh_token")
 @limiter.limit("4/second")
-async def get_new_access_token(request: Request, token_details:dict = Depends(RefreshTokenBearer())):
-    expiry_timestamp = token_details['exp']
-    if datetime.fromtimestamp(expiry_timestamp, timezone.utc) > datetime.now(timezone.utc):
+async def get_new_access_token(request: Request, token_details: dict = Depends(RefreshTokenBearer()), session: AsyncSession = Depends(get_session)):
+    user = await user_service.get_user_by_email(token_details['user']['email'], session)
 
-        old_access_token = await get_token_from_blocklist(f"session:{token_details['jti']}:access")
-        if old_access_token:
-            await add_token_to_blocklist_with_timestamp(old_access_token, expiry_timestamp)
+    access_jti = await get_token_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
+    name = f"{user.uid}:access:{access_jti}"
 
-        token_data = decode_token(token_details['token'])
-        exp_time = token_data['exp']
-        await add_token_to_blocklist_with_timestamp(token_details['token'], exp_time)
+    old_access_token = await get_token_from_storage(f"{user.uid}:access:{access_jti}")
+    if old_access_token:
+        await delete_from_storage(f"{user.uid}:access:{access_jti}")
 
-        user_data={
-            'email': token_details['user']['email'],
-            'user_uid': token_details['user']['user_uid'],
-            "role": token_details['user']['role'],
+    await delete_from_storage(f"{user.uid}:refresh:{token_details['jti']}")
+    await delete_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
+
+    access_token, refresh_token = await create_both_jwt_tokens(token_details['user'], session)
+
+    return JSONResponse(
+        content={
+            'access_token': access_token,
+            'refresh_token': refresh_token,
         }
-
-        access_token, refresh_token = await create_both_jwt_tokens(user_data)
-
-        return JSONResponse(
-            content={
-                'access_token': access_token,
-                'refresh_token': refresh_token,
-            }
-        )
-
-    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been expired")
+    )
 
 
 @auth_router.post("/logout")
 @limiter.limit("4/second")
-async def logout(request: Request, token_details:dict = Depends(AccessTokenBearer())):
-    old_access_token = await get_token_from_blocklist(f"session:{token_details['jti']}:access")
+async def logout(request: Request, token_details: dict = Depends(RefreshTokenBearer()), session: AsyncSession = Depends(get_session)):
+    user = await user_service.get_user_by_email(token_details['user']['email'], session)
+
+    access_jti = await get_token_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
+
+    old_access_token = await get_token_from_storage(f"{user.uid}:access:{access_jti}")
     if old_access_token:
-        await add_token_to_blocklist_with_timestamp(old_access_token, token_details['exp'])
+        await delete_from_storage(f"{user.uid}:access:{access_jti}")
+
+    await delete_from_storage(f"{user.uid}:refresh:{token_details['jti']}")
+    await delete_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
 
     return JSONResponse(
         content={
@@ -252,16 +242,22 @@ async def logout(request: Request, token_details:dict = Depends(AccessTokenBeare
 
 @auth_router.post("/me")
 @limiter.limit("2/second")
-async def get_current_user(request: Request, user = Depends(get_current_user), _: bool = Depends(RoleChecker(["admin"]))):
-    return user
+async def get_current_user(request: Request, user = Depends(get_current_user), _: bool = Depends(RoleChecker(["user","admin"]))):
+    return JSONResponse(
+        content={
+            "user": user.role,
+        },
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @auth_router.post("/resend_verification")
 @limiter.limit("2/second")
-async def send_mail(request: Request, background_tasks: BackgroundTasks, token_details:dict = Depends(AccessTokenBearer()), session: AsyncSession = Depends(get_session)):
+async def send_mail(request: Request, background_tasks: BackgroundTasks, redirect_uri: str = None, token_details:dict = Depends(AccessTokenBearer()), session: AsyncSession = Depends(get_session)):
+    redirect_uri = validate_uri(redirect_uri)
     email = token_details['user']['email']
 
-    blocklist_data = await get_token_from_blocklist(f"email_verification:{email}")
+    blocklist_data = await get_token_from_storage(f"email_verification:{email}")
     if blocklist_data:
         data = json.loads(blocklist_data)
         last_sent_time = data["time"]
@@ -290,7 +286,7 @@ async def send_mail(request: Request, background_tasks: BackgroundTasks, token_d
     })
 
     body = {
-        "link": verification_link + f"{token}",
+        "link": redirect_uri + f"{token}",
     }
 
     send_email.delay([email], "Email Verification", body, 'email_verification.html')
@@ -304,9 +300,10 @@ async def send_mail(request: Request, background_tasks: BackgroundTasks, token_d
         status_code=status.HTTP_200_OK,
     )
 
-@auth_router.get("/verify/{token}")
+@auth_router.post("/verify/{token}")
 @limiter.limit("2/second")
 async def verify_user_account(request: Request, token: str, session: AsyncSession = Depends(get_session)):
+
     token_data = decode_url_safe_token(token)
 
     user_email = token_data.get('email')
@@ -321,7 +318,7 @@ async def verify_user_account(request: Request, token: str, session: AsyncSessio
 
         return JSONResponse(
             content={
-                "message": "Account verified",
+                "message": "Account verified successfully",
             },
             status_code=status.HTTP_200_OK,
         )
@@ -338,11 +335,13 @@ async def verify_user_account(request: Request, token: str, session: AsyncSessio
 @limiter.limit("2/second")
 async def password_reset(
     request: Request,
-    email_data: PasswordResetModel, 
+    data: PasswordResetModel,
     background_tasks: BackgroundTasks,
     session: AsyncSession = Depends(get_session)
 ):
-    email = email_data.email
+    redirect_uri = data.redirect_uri
+    
+    email = data.email
 
     user_exists = await user_service.user_exists(email, session)
 
@@ -354,7 +353,7 @@ async def password_reset(
             status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
 
-    blocklist_data = await get_token_from_blocklist(f"password_reset_email:{email}")
+    blocklist_data = await get_token_from_storage(f"password_reset_email:{email}")
     if blocklist_data:
         data = json.loads(blocklist_data)
         last_sent_time = data["time"]
@@ -371,7 +370,7 @@ async def password_reset(
     })
 
     body = {
-        "link": password_reset_link + f"{token}",
+        "link": redirect_uri + f"{token}",
     }
 
     send_email.delay([email], "Reset your password", body, 'password_reset.html')
@@ -388,7 +387,7 @@ async def password_reset(
 
 @auth_router.post("/password_reset_confirm/{token}")
 @limiter.limit("2/second")
-async def verify_user_account(
+async def passsword_reset_confirm(
     request: Request,
     token: str,
     passwords: PassswordResetConfirmModel,
@@ -413,6 +412,8 @@ async def verify_user_account(
         password_hash = generate_hash_password(passwords.new_password)
 
         await user_service.update_user(user, {"password_hash": password_hash}, session)
+
+        await revoke_user_tokens(user.uid)
 
         return JSONResponse(
             content={

@@ -7,6 +7,7 @@ from core.config import settings
 
 origins = [
     "http://localhost:5173",
+    "http://localhost:5174",
 ]
 
 def setup_middlewares(app: FastAPI) :

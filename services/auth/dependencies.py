@@ -8,9 +8,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database.db import get_session
 from models.db.users import User
-from database.redis import token_in_blocklist
+from database.redis import token_in_storage
 
-from services.auth.user_service import UserService
+from services.auth.user_service import user_service
 from .utils.token_utils import decode_token
 from services.errors.permission_errors import (
     InvalidToken,
@@ -20,38 +20,31 @@ from services.errors.permission_errors import (
     AccountNotVerified,
 )
 
-user_service = UserService()
-
 
 class TokenBearer(HTTPBearer):
     def __init__(self, auto_error=True):
         super().__init__(auto_error=auto_error)
 
-    async def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+    async def __call__(self, request: Request, session: AsyncSession = Depends(get_session)) -> HTTPAuthorizationCredentials | None:
         creds = await super().__call__(request)
 
         token = creds.credentials
 
         token_data = decode_token(token)
 
-        if not self.token_valid(token):
+        if token_data is None:
             raise InvalidToken()
         
-        await self.check_token_in_blocklist(token)
-
         self.verify_token_data(token_data)
+        
+        await self.check_token_in_blocklist(token_data, session)
 
         return token_data
-
-    def token_valid(self, token: str) -> bool:
-        token_data = decode_token(token)
-
-        return token_data is not None
 
     def verify_token_data(self, token_data):
         raise NotImplementedError("Please Override this method in child classes")
     
-    def check_token_in_blocklist(self, token: str) -> None:
+    def check_token_in_blocklist(self, token: str, session: AsyncSession) -> None:
         raise NotImplementedError("Please Override this method in child classes")
 
 
@@ -60,8 +53,12 @@ class AccessTokenBearer(TokenBearer):
         if token_data and token_data["refresh"]:
             raise AccessTokenRequired()
         
-    async def check_token_in_blocklist(self, token: str) -> None:
-        if await token_in_blocklist(token):
+    async def check_token_in_blocklist(self, token_data: dict, session: AsyncSession) -> None:
+        user = await user_service.get_user_by_email(token_data['user']['email'], session)
+
+        name = f"{user.uid}:access:{token_data['jti']}"
+
+        if not await token_in_storage(name):
             raise InvalidToken()
 
 
@@ -70,8 +67,12 @@ class RefreshTokenBearer(TokenBearer):
         if token_data and not token_data["refresh"]:
             raise RefreshTokenRequired()
         
-    async def check_token_in_blocklist(self, token: str) -> None:
-        if await token_in_blocklist(token):
+    async def check_token_in_blocklist(self, token_data: dict, session: AsyncSession) -> None:
+        user = await user_service.get_user_by_email(token_data['user']['email'], session)
+
+        name = f"{user.uid}:refresh:{token_data['jti']}"
+
+        if not await token_in_storage(name):
             raise InvalidToken()
 
 

@@ -56,3 +56,6 @@ class UserService:
         await session.commit()
 
         return user
+    
+
+user_service = UserService()
