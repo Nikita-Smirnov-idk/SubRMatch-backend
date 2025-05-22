@@ -18,7 +18,9 @@ from services.errors.permission_errors import (
     AccessTokenRequired,
     InsufficientPermission,
     AccountNotVerified,
+    UserNotFound,
 )
+import uuid
 
 
 class TokenBearer(HTTPBearer):
@@ -36,15 +38,20 @@ class TokenBearer(HTTPBearer):
             raise InvalidToken()
         
         self.verify_token_data(token_data)
+
+        user = await user_service.get_user_by_email(token_data['user']['email'], session)
+
+        if user is None:
+            raise UserNotFound()
         
-        await self.check_token_in_blocklist(token_data, session)
+        await self.check_token_in_blocklist(token_data, user.uid)
 
         return token_data
 
     def verify_token_data(self, token_data):
         raise NotImplementedError("Please Override this method in child classes")
     
-    def check_token_in_blocklist(self, token: str, session: AsyncSession) -> None:
+    def check_token_in_blocklist(self, token_data: str, uid: uuid.UUID) -> None:
         raise NotImplementedError("Please Override this method in child classes")
 
 
@@ -53,10 +60,8 @@ class AccessTokenBearer(TokenBearer):
         if token_data and token_data["refresh"]:
             raise AccessTokenRequired()
         
-    async def check_token_in_blocklist(self, token_data: dict, session: AsyncSession) -> None:
-        user = await user_service.get_user_by_email(token_data['user']['email'], session)
-
-        name = f"{user.uid}:access:{token_data['jti']}"
+    async def check_token_in_blocklist(self, token_data: dict, uid: uuid.UUID) -> None:
+        name = f"{uid}:access:{token_data['jti']}"
 
         if not await token_in_storage(name):
             raise InvalidToken()
@@ -67,10 +72,8 @@ class RefreshTokenBearer(TokenBearer):
         if token_data and not token_data["refresh"]:
             raise RefreshTokenRequired()
         
-    async def check_token_in_blocklist(self, token_data: dict, session: AsyncSession) -> None:
-        user = await user_service.get_user_by_email(token_data['user']['email'], session)
-
-        name = f"{user.uid}:refresh:{token_data['jti']}"
+    async def check_token_in_blocklist(self, token_data: dict, uid: uuid.UUID) -> None:
+        name = f"{uid}:refresh:{token_data['jti']}"
 
         if not await token_in_storage(name):
             raise InvalidToken()

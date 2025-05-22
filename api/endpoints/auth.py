@@ -172,10 +172,10 @@ async def login(request: Request, user_data: UserLoginModel, session: AsyncSessi
     
     user = await user_service.get_user_by_email(email, session)
 
-    if user.google_id and (user.password_hash is None):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
-
     if user is not None:
+        if user.google_id and (user.password_hash is None):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid credentials")
+        
         password_valid = verify_password(password, user.password_hash)
     
         if password_valid:
@@ -197,14 +197,14 @@ async def login(request: Request, user_data: UserLoginModel, session: AsyncSessi
 @auth_router.post("/refresh_token")
 @limiter.limit("4/second")
 async def get_new_access_token(request: Request, token_details: dict = Depends(RefreshTokenBearer()), session: AsyncSession = Depends(get_session)):
-    user = await user_service.get_user_by_email(token_details['user']['email'], session)
+    user = await user_service.get_user_by_email(token_details['user']['email'], session, True)
 
     access_jti = await get_token_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
     name = f"{user.uid}:access:{access_jti}"
 
-    old_access_token = await get_token_from_storage(f"{user.uid}:access:{access_jti}")
+    old_access_token = await get_token_from_storage(name)
     if old_access_token:
-        await delete_from_storage(f"{user.uid}:access:{access_jti}")
+        await delete_from_storage(name)
 
     await delete_from_storage(f"{user.uid}:refresh:{token_details['jti']}")
     await delete_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
@@ -222,7 +222,7 @@ async def get_new_access_token(request: Request, token_details: dict = Depends(R
 @auth_router.post("/logout")
 @limiter.limit("4/second")
 async def logout(request: Request, token_details: dict = Depends(RefreshTokenBearer()), session: AsyncSession = Depends(get_session)):
-    user = await user_service.get_user_by_email(token_details['user']['email'], session)
+    user = await user_service.get_user_by_email(token_details['user']['email'], session, True)
 
     access_jti = await get_token_from_storage(f"{user.uid}:refresh_to_access:{token_details['jti']}")
 
@@ -268,18 +268,15 @@ async def send_mail(request: Request, background_tasks: BackgroundTasks, redirec
                 status_code=429,
                 detail=f"Please wait {remaining_time} seconds before resending."
             )
-
-    user_exists = await user_service.user_exists(email, session)
-
-    if user_exists:
-        user = await user_service.get_user_by_email(email, session)
-        if user.is_verified:
-            return JSONResponse(
-                content = {
-                    "message" : "You are already verified!",
-                },
-                status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
-            )
+        
+    user = await user_service.get_user_by_email(email, session, True)
+    if user.is_verified:
+        return JSONResponse(
+            content = {
+                "message" : "You are already verified!",
+            },
+            status_code=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     token = create_url_safe_token({
         "email": email,
@@ -309,10 +306,7 @@ async def verify_user_account(request: Request, token: str, session: AsyncSessio
     user_email = token_data.get('email')
 
     if user_email:
-        user = await user_service.get_user_by_email(user_email, session)
-
-        if not user:
-            raise UserNotFound()
+        user = await user_service.get_user_by_email(user_email, session, True)
         
         await user_service.update_user(user, {"is_verified": True}, session)
 
@@ -404,10 +398,7 @@ async def passsword_reset_confirm(
     user_email = token_data.get('email')
 
     if user_email:
-        user = await user_service.get_user_by_email(user_email, session)
-
-        if not user:
-            raise UserNotFound()
+        user = await user_service.get_user_by_email(user_email, session, True)
         
         password_hash = generate_hash_password(passwords.new_password)
 

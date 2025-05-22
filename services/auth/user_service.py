@@ -3,15 +3,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from models.pydantic.auth import UserCreateByOauthModel, UserCreateByEmailModel
 from .utils.password_utils import generate_hash_password
-from services.errors.permission_errors import InvalidCredentials
+from services.errors.permission_errors import UserNotFound
 
 class UserService:
-    async def get_user_by_email(self, email: str, session: AsyncSession) -> User:
+    async def get_user_by_email(self, email: str, session: AsyncSession, raise_error: bool = False) -> User:
         statement = select(User).where(User.email == email)
 
         result = await session.exec(statement)
 
         user = result.first()
+
+        if user is None and raise_error:
+            raise UserNotFound()
 
         return user
     
