@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Text
+from typing import Text, Optional
 from .validators.reddit_validators import validate_text, validate_json
 
 
@@ -14,9 +14,9 @@ class RedditPostModel(BaseModel):
 
 
 class RedditPostFormatForSubredditModel(BaseModel):
-    post: Text = Field(min_length=2, max_length = 10000)
-    subreddit_name: str = Field(min_length=2, max_length = 21)
-    subreddit_rules: Text = Field(min_length=2, max_length = 10000)
+    post: str = Field(min_length=2, max_length=10000)
+    subreddit_name: str = Field(min_length=2, max_length=21)
+    subreddit_rules: Optional[str] = Field(default=None, min_length=2, max_length=10000, nullable=True)
 
     @field_validator("post")
     def validate_post(cls, value: str) -> str:

@@ -3,6 +3,8 @@ from core.config import settings
 from typing import Dict, List
 import asyncpraw
 import json
+import logging
+from asyncprawcore.exceptions import Forbidden
 
 
 reddit = asyncpraw.Reddit(
@@ -12,13 +14,22 @@ reddit = asyncpraw.Reddit(
 )
 
 
+async def subreddit_exists(subreddit_name: str) -> bool:
+    try:
+        await reddit.subreddit(subreddit_name)
+        return True
+    except Exception as e:
+        logging.error(e)
+        return False
+
+
 async def get_subreddit_rules(subreddit_name: str):
     """
     Получает правила для списка сабреддитов.
     Args:
-        subreddit_list: Список названий сабреддитов.
+        subreddit_name: название сабреддита.
     Returns:
-        JSON-объект с правилами для каждого сабреддита.
+        JSON-объект с правилами для сабреддита.
     """
     
     try:
@@ -36,14 +47,17 @@ async def get_subreddit_rules(subreddit_name: str):
             }
             for idx, rule in enumerate(subreddit_rules)
         ]
+        await subreddit.load()
         
         return json.dumps({
             "name": subreddit_name,
+            "subscribers": subreddit.subscribers,
             "status": "success",
             "rules": rule_list
         })
         
     except Exception as e:
+        logging.error(e)
         return json.dumps({
             "name": subreddit_name,
             "status": "failed",

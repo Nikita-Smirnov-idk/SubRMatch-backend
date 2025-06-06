@@ -1,9 +1,14 @@
-({title - title_content} title just as text, for example:)
-{title - Struggling to Make Money Online - Need Advice}
+({title - "title_content"} title just as text, for example:)
+{title - "Struggling to Make Money Online - Need Advice"}
 
-({body - body_content} body just as text, for example)
-{body - I’ve been trying to make money online for a while now but haven’t had much success. Could anyone please share some advice or tips.}
+({body - "body_content"} body just as text, for example)
+{body - "I’ve been trying to make money online for a while now but haven’t had much success. Could anyone please share some advice or tips."}
+
+({score - (number from 0 to 1)} score that shows how correct post is, according rules, 0 - awful, you need to change everything, 100 - no changes needed)
+{score - 0.9}
 
 (everything in () is just my comments, use them, but not print them in the answer)
 (so you should return only formatted post without any comments)
 (you have to follow rules of subreddit as much as possible, trying to preserve the original content of post)
+(you need to use the same intonation, tone, and type (conversational, business ans etc...) of speech)
+(try to leave as much of the original text as possible)
