@@ -1,16 +1,14 @@
-import httpx
 from core.config import settings
-from typing import Dict, List
 import asyncpraw
 import json
 import logging
-from asyncprawcore.exceptions import Forbidden
-
 
 reddit = asyncpraw.Reddit(
     client_id=settings.REDDIT_CLIENT_ID,
     client_secret=settings.REDDIT_CLIENT_SECRET,
     user_agent=settings.REDDIT_USER_AGENT,
+    username=settings.REDDIT_USER_NAME,
+    password=settings.REDDIT_USER_PASSWORD,
 )
 
 
@@ -31,11 +29,9 @@ async def get_subreddit_rules(subreddit_name: str):
     Returns:
         JSON-объект с правилами для сабреддита.
     """
-    
     try:
         subreddit = await reddit.subreddit(subreddit_name)
         subreddit_rules = []
-
         async for rule in subreddit.rules:
             subreddit_rules.append(rule)
 

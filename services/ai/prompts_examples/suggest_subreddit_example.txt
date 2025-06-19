@@ -2,6 +2,10 @@
 
 {2 - r/beermoney - "A community focused on sharing ways to make extra money online or through small tasks." - 0.80}
 
+or
+
+{1 - r/adulting - "A community for sharing tips and experiences about growing up and handling adult responsibilities."}
+
 (everything in () is just my comments, do not include them)
 {(number (1 is best option)) - (subreddits after r/) - "(description)" - (match level from 0 to 1)}
 (every line must be in {} and ends with "\n")

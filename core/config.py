@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     REDDIT_CLIENT_SECRET: str
     REDDIT_USER_AGENT: str
     REDDIT_BASE_URL: str
+    REDDIT_USER_NAME: str
+    REDDIT_USER_PASSWORD: str
     
     GOOGLE_CLIENT_ID: str
     GOOGLE_CLIENT_SECRET: str

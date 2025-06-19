@@ -18,6 +18,7 @@ async def life_span(app: FastAPI):
     await reddit.close()
 
 
+
 app = FastAPI(
     title="SubRMatch",
     description="Find and format Reddit posts",

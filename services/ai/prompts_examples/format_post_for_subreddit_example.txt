@@ -9,6 +9,8 @@
 
 (everything in () is just my comments, use them, but not print them in the answer)
 (so you should return only formatted post without any comments)
-(you have to follow rules of subreddit as much as possible, trying to preserve the original content of post)
+(you should follow rules of subreddit, trying to preserve the original content of post)
 (you need to use the same intonation, tone, and type (conversational, business ans etc...) of speech)
 (try to leave as much of the original text as possible)
+(do not change tone or intonation ot type of speech in post)
+(do not add anything from yourself and if the post is ok, than return it)
